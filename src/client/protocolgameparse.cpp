@@ -444,6 +444,9 @@ void ProtocolGame::parseMessage(const InputMessagePtr& msg)
                 case Proto::GameServerLootContainers:
                     parseLootContainers(msg);
                     break;
+                case Proto::GameServerMonkData:
+                    parseMonkData(msg);
+                    break;
                 case Proto::GameServerCyclopediaHouseAuctionMessage:
                     parseCyclopediaHouseAuctionMessage(msg);
                     break;
@@ -1745,9 +1748,15 @@ void ProtocolGame::parseMagicEffect(const InputMessagePtr& msg)
         uint8_t effectType = msg->getU8();
         while (effectType != Otc::MAGIC_EFFECTS_END_LOOP) {
             switch (effectType) {
-                case Otc::MAGIC_EFFECTS_DELAY:
+                case Otc::MAGIC_EFFECTS_DELAY: {
+                    // DELAY requires a uint16_t delay (milliseconds)
+                    msg->getU16();
+                    break;
+                }
+
                 case Otc::MAGIC_EFFECTS_DELTA: {
-                    msg->getU8(); // ?
+                    // DELTA requires a uint8_t delta
+                    msg->getU8();
                     break;
                 }
 
@@ -1758,7 +1767,7 @@ void ProtocolGame::parseMagicEffect(const InputMessagePtr& msg)
                     const auto offsetY = static_cast<int8_t>(msg->getU8());
                     if (!g_things.isValidDatId(shotId, ThingCategoryMissile)) {
                         g_logger.traceError("invalid missile id {}", shotId);
-                        return;
+                        break;
                     }
 
                     const auto& missile = std::make_shared<Missile>();
@@ -1778,7 +1787,7 @@ void ProtocolGame::parseMagicEffect(const InputMessagePtr& msg)
                     const uint16_t effectId = g_game.getFeature(Otc::GameEffectU16) ? msg->getU16() : msg->getU8();
                     if (!g_things.isValidDatId(effectId, ThingCategoryEffect)) {
                         g_logger.traceError("invalid effect id {}", effectId);
-                        continue;
+                        break;
                     }
 
                     const auto& effect = std::make_shared<Effect>();
@@ -2504,6 +2513,9 @@ void ProtocolGame::parsePlayerSkills(const InputMessagePtr& msg) const
         // Defense info
         const uint16_t defense = msg->getU16();
         const uint16_t armor = msg->getU16();
+        if (g_game.getClientVersion() >= 1500) {
+            msg->getU16(); // Monk mantra
+        }
         const double mitigation = msg->getDouble();
         const double dodge = msg->getDouble();
         const uint16_t damageReflection = msg->getU16();
@@ -3000,6 +3012,10 @@ void ProtocolGame::parseQuestTracker(const InputMessagePtr& msg)
                     questId = msg->getU16();
                 }
                 const uint16_t missionId = msg->getU16();
+                //if (g_game.getClientVersion() < 1500) {
+                 //   msg->getU8();
+                  //  msg->getU8();
+               // }
                 const std::string& questName = msg->getString();
                 const std::string& missionName = msg->getString();
                 const std::string& missionDesc = msg->getString();
@@ -3013,6 +3029,10 @@ void ProtocolGame::parseQuestTracker(const InputMessagePtr& msg)
                 questId = msg->getU16();
             }
             const uint16_t missionId = msg->getU16();
+            //if (g_game.getClientVersion() < 1500) {
+            //    msg->getU8();
+             //   msg->getU8();
+            //}
             std::string questName = "";
             if (g_game.getClientVersion() >= 1410) {
                 questName = msg->getString();
@@ -3377,27 +3397,92 @@ void ProtocolGame::parsePlayerInventory(const InputMessagePtr& msg)
     const uint16_t size = msg->getU16();
     constexpr uint16_t MAX_INVENTORY_TYPES = 10000;
     if (size > MAX_INVENTORY_TYPES) {
-        g_logger.warning("[game_actionBar][parsePlayerInventory]: inventory size {} exceeds maximum allowed {}", size, MAX_INVENTORY_TYPES);
+        g_logger.warning("[game_actionBar][parsePlayerInventory]: inventory size {} exceeds maximum allowed {}",
+                         size, MAX_INVENTORY_TYPES);
         return;
     }
     std::map<std::pair<uint16_t, uint8_t>, uint16_t> inventoryCounts;
 
-    for (uint16_t i = 0; std::cmp_less(i, size); ++i) {
-        const uint16_t itemId = msg->getU16();
-        const uint8_t attribute = msg->getU8();
-        const uint16_t amount = msg->getU16();
+    const auto clientVersion = g_game.getClientVersion();
 
-        uint8_t tier = 0;
-        if (const auto thingType = g_things.getThingType(itemId, ThingCategoryItem)) {
-            if (std::cmp_greater(thingType->getClassification(), 0)) {
-                tier = attribute;
+    auto saturating_add_u16 = [](uint16_t a, uint32_t b) -> uint16_t {
+        const uint32_t sum = static_cast<uint32_t>(a) + b;
+        return static_cast<uint16_t>(std::min<uint32_t>(sum, (std::numeric_limits<uint16_t>::max)()));
+    };
+
+    auto decode_count_vle = [&](uint32_t& out) -> bool {
+        // Decodifica um inteiro sem sinal em 1/2/4 bytes seguindo os dois bits mais altos de 'first'
+        // Retorna false em caso de prefixo inválido
+        const uint8_t first = msg->getU8();
+
+        if ((first & 0xC0u) == 0x00u) {
+            // 1 byte total (os 2 msb são 00 => valor cabe nos 6 lsb + como inteiro de 8 bits)
+            out = first;
+            return true;
+        }
+        if ((first & 0xC0u) == 0x40u) {
+            // 2 bytes total (01)
+            const uint8_t second = msg->getU8();
+            out = (static_cast<uint32_t>(first & 0x3Fu) << 8) | second;
+            return true;
+        }
+        if ((first & 0xC0u) == 0x80u) {
+            // 4 bytes total (10)
+            const uint8_t b2 = msg->getU8();
+            const uint8_t b3 = msg->getU8();
+            const uint8_t b4 = msg->getU8();
+            out = (static_cast<uint32_t>(first & 0x3Fu) << 24)
+                | (static_cast<uint32_t>(b2) << 16)
+                | (static_cast<uint32_t>(b3) << 8)
+                | b4;
+            return true;
+        }
+
+        // 11 (0xC0) é reservado/indefinido aqui – tratar como erro
+        g_logger.error("[parsePlayerInventory] Invalid encoded count prefix: 0x{}", first);
+        out = 0;
+        return false;
+    };
+
+    for (uint16_t i = 0; std::cmp_less(i, size); ++i) {
+        uint16_t itemId{};
+        uint8_t tier{};
+        uint32_t count32{};
+
+        if (clientVersion < 1500) {
+            // Protocolo antigo: id(u16), attribute(u8), amount(u16)
+            const uint16_t id      = msg->getU16();
+            const uint8_t attribute = msg->getU8();
+            const uint16_t amount  = msg->getU16();
+
+            itemId = id;
+
+            // Tier só existe/é válido se classificação > 0
+            if (const auto thingType = g_things.getThingType(itemId, ThingCategoryItem)) {
+                if (std::cmp_greater(thingType->getClassification(), 0)) {
+                    tier = attribute;
+                } else {
+                    tier = 0;
+                }
+            } else {
+                tier = 0; // se não achou o type, não arriscar
+            }
+
+            count32 = amount;
+        } else {
+            // Protocolo >= 1500: id(u16), tier(u8), count codificado (1/2/4 bytes)
+            itemId = msg->getU16();
+            tier   = msg->getU8();
+
+            if (!decode_count_vle(count32)) {
+                // Em caso de erro, seguir para o próximo item sem acumular
+                continue;
             }
         }
 
         const auto key = std::make_pair(itemId, tier);
         auto& entry = inventoryCounts[key];
-        const uint32_t sum = static_cast<uint32_t>(entry) + amount;
-        entry = static_cast<uint16_t>(std::min<uint32_t>(sum, (std::numeric_limits<uint16_t>::max)()));
+        entry = saturating_add_u16(entry, count32);
     }
 
     if (const auto& localPlayer = g_game.getLocalPlayer()) {
@@ -3448,13 +3533,22 @@ void ProtocolGame::parseModalDialog(const InputMessagePtr& msg)
 void ProtocolGame::parseExtendedOpcode(const InputMessagePtr& msg)
 {
     const uint8_t opcode = msg->getU8();
-    const auto& buffer = msg->getString();
 
     if (opcode == 0) {
         m_enableSendExtendedOpcode = true;
+        flushPendingExtendedOpcodes();
+        // Some servers may include an empty string (length 0). Consume if present to avoid misalignment.
+        if (msg->getUnreadSize() > 0) {
+            (void)msg->getString();
+        }
     } else if (opcode == 2) {
         parsePingBack(msg);
+        // Some servers may include an empty string after ping opcode. Consume if present.
+        if (msg->getUnreadSize() > 0) {
+            (void)msg->getString();
+        }
     } else {
+        const auto& buffer = msg->getString();
         callLuaField("onExtendedOpcode", opcode, buffer);
     }
 }
@@ -4222,6 +4316,12 @@ void ProtocolGame::parseLootContainers(const InputMessagePtr& msg)
     g_lua.callGlobalField("g_game", "onQuickLootContainers", quickLootFallbackToMainContainer, lootList);
 }
 
+void ProtocolGame::parseMonkData(const InputMessagePtr& msg) {
+    auto type = static_cast<Otc::MonkData>(msg->getU8());
+    auto value = msg->getU8();
+    g_logger.info("MonkData type: {}, value: {}", static_cast<int>(type), value);
+}
+
 void ProtocolGame::parseCyclopediaHouseAuctionMessage(const InputMessagePtr& msg)
 {
     msg->getU32(); // houseId
@@ -4725,6 +4825,9 @@ void ProtocolGame::parseCyclopediaCharacterInfo(const InputMessagePtr& msg)
             data.weaponElementDamage = msg->getU8();
             data.weaponElementType = msg->getU8();
             data.armor = msg->getU16();
+            if (g_game.getClientVersion() >= 1500) {
+                data.mantra = msg->getU16();
+            }
             data.defense = msg->getU16();
             const double mitigation = msg->getDouble();
 
