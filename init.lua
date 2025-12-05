@@ -9,11 +9,10 @@ Services = {
     --createAccount = "http://localhost/clientcreateaccount.php", --./client_entergame -- createAccount.lua
 }
 
---[[
 Servers_init = {
     ["http://127.0.0.1/login.php"] = {
-        ["port"] = 80,
-        ["protocol"] = 1320,
+        ["port"] = 7171,
+        ["protocol"] = 1511,
         ["httpLogin"] = true
     },
     ["ip.net"] = {
@@ -22,7 +21,7 @@ Servers_init = {
         ["httpLogin"] = false
     },
 }
-]]
+
 
 g_app.setName("OTClient - Redemption");
 g_app.setCompactName("otclient");
@@ -60,9 +59,6 @@ if not g_resources.addSearchPath(g_resources.getWorkDir() .. 'modules', true) th
     g_logger.fatal('Unable to add modules directory to the search path.')
 end
 
-g_html.addGlobalStyle('/data/styles/html.css')
-g_html.addGlobalStyle('/data/styles/custom.css')
-
 -- try to add mods path too
 g_resources.addSearchPath(g_resources.getWorkDir() .. 'mods', true)
 
@@ -83,6 +79,12 @@ g_modules.ensureModuleLoaded('corelib')
 g_modules.ensureModuleLoaded('gamelib')
 g_modules.ensureModuleLoaded('modulelib')
 g_modules.ensureModuleLoaded("startup")
+
+-- Load html styles after corelib is loaded
+if g_html then
+    g_html.addGlobalStyle('/data/styles/html.css')
+    g_html.addGlobalStyle('/data/styles/custom.css')
+end
 
 g_modules.autoLoadModules(999)
 g_modules.ensureModuleLoaded('game_shaders') -- pre load
