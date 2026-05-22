@@ -214,16 +214,49 @@ bool ThingTypeManager::loadAppearances(const std::string& file)
             }
             m_datLoaded = true;
         } else {
+            // Narutibia hybrid mode: Tibia.dat 10.98 sprites + appearances.dat 13.x flag metadata.
+            // We need flags for ALL ids the server might send (incl. ids beyond the 10.98 dat range),
+            // otherwise the protocol parser desyncs (count/podium/classification/etc. are flag-driven).
             std::stringstream datFileStream;
             auto appearancesLib = appearances::Appearances();
             g_resources.readFileStream(g_resources.resolvePath(g_resources.guessFilePath(file, "dat")), datFileStream);
             if (!appearancesLib.ParseFromIstream(&datFileStream)) {
                 throw stdext::exception("Couldn't parse appearances.dat.");
             }
-            for (const auto& appearance : appearancesLib.object()) {
-                const uint16_t id = appearance.id();
-                if (auto* type = getRawThingType(id, ThingCategoryItem)) {
-                    type->applyAppearanceFlags(appearance.flags());
+            for (int category = ThingCategoryItem; category < ThingLastCategory; ++category) {
+                const google::protobuf::RepeatedPtrField<appearances::Appearance>* appearances = nullptr;
+                switch (category) {
+                    case ThingCategoryItem: appearances = &appearancesLib.object(); break;
+                    case ThingCategoryCreature: appearances = &appearancesLib.outfit(); break;
+                    case ThingCategoryEffect: appearances = &appearancesLib.effect(); break;
+                    case ThingCategoryMissile: appearances = &appearancesLib.missile(); break;
+                    default: continue;
+                }
+
+                uint32_t lastAppearanceId = 0;
+                for (const auto& appearance : *appearances) {
+                    if (appearance.id() > lastAppearanceId)
+                        lastAppearanceId = appearance.id();
+                }
+                auto& things = m_thingTypes[category];
+                if (things.size() <= lastAppearanceId) {
+                    things.resize(lastAppearanceId + 1, m_nullThingType);
+                }
+
+                for (const auto& appearance : *appearances) {
+                    const uint16_t id = appearance.id();
+                    auto& slot = things[id];
+                    if (slot && !slot->isNull()) {
+                        // Existing sprite-bearing type from Tibia.dat 10.98: just patch flags.
+                        slot->applyAppearanceFlags(appearance.flags());
+                    } else {
+                        // No 10.98 sprite for this id — create a flags-only stub so the
+                        // protocol parser can still consume conditional bytes correctly.
+                        // Rendering will fall back to null/placeholder (handled elsewhere).
+                        const auto& type = std::make_shared<ThingType>();
+                        type->unserializeAppearance(id, static_cast<ThingCategory>(category), appearance);
+                        slot = type;
+                    }
                 }
             }
         }
@@ -333,7 +366,8 @@ const ThingTypeList& ThingTypeManager::getThingTypes(const ThingCategory categor
 const ThingTypePtr& ThingTypeManager::getThingType(const uint16_t id, const ThingCategory category)
 {
     if (category >= ThingLastCategory || id >= m_thingTypes[category].size()) {
-        g_logger.error("invalid thing type client id {} in category {}", id, static_cast<uint8_t>(category));
+        // Narutibia: servidor 13.10 manda IDs alem do range do DAT 10.98 — esperado, nao e erro.
+        g_logger.debug("unknown thing type client id {} in category {}", id, static_cast<uint8_t>(category));
         return m_nullThingType;
     }
     return m_thingTypes[category][id];
@@ -341,7 +375,8 @@ const ThingTypePtr& ThingTypeManager::getThingType(const uint16_t id, const Thin
 
 ThingType* ThingTypeManager::getRawThingType(uint16_t id, ThingCategory category) {
     if (category >= ThingLastCategory || id >= m_thingTypes[category].size()) {
-        g_logger.error("invalid thing type client id {} in category {}", id, static_cast<uint8_t>(category));
+        // Narutibia: servidor 13.10 manda IDs alem do range do DAT 10.98 — esperado, nao e erro.
+        g_logger.debug("unknown thing type client id {} in category {}", id, static_cast<uint8_t>(category));
         return nullptr;
     }
     return m_thingTypes[category][id].get();

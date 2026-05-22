@@ -4233,6 +4233,9 @@ ItemPtr ProtocolGame::getItem(const InputMessagePtr& msg, int id)
         throw Exception("ProtocolGame::getItem: unable to create item with invalid id {}", id);
     }
 
+    // Narutibia: tolerar IDs > DAT range — getId() retornará o id solicitado mesmo se não
+    // existir no DAT; flags (isStackable/isContainer/isPodium/...) viram false, parser não
+    // consome bytes extras e o stream segue sincronizado.
     if (item->getId() == 0) {
         throw Exception("ProtocolGame::getItem: unable to create item with invalid id {}", id);
     }

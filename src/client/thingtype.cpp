@@ -176,6 +176,14 @@ void ThingType::unserializeAppearance(const uint16_t clientId, const ThingCatego
 
 void ThingType::applyAppearanceFlags(const appearances::AppearanceFlags& flags)
 {
+    // Narutibia: hybrid overlay. The legacy .dat (12.86) already provides the bulk of the
+    // flags that drive the packet layout (stackable, container, podium, classification,
+    // clockexpire, wearout, etc.). The appearances.dat 13.10 here only ADDS new flags that
+    // didn't exist in 12.86 or weren't set for a given item. Zeroing m_flags here would
+    // destroy bits the .dat already provided whenever the appearances.dat protobuf doesn't
+    // re-set them explicitly, which directly causes byte-stream desync on tile parse.
+    // OR-merge is intentional.
+
     if (flags.has_bank()) {
         m_groundSpeed = flags.bank().waypoints();
         m_flags |= ThingFlagAttrGround;

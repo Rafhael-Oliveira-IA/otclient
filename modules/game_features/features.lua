@@ -219,6 +219,13 @@ controller:registerEvents(g_game, {
             g_game.enableFeature(GamePlayerFamiliars)
             g_game.disableFeature(GameEnvironmentEffect)
             g_game.disableFeature(GameItemAnimationPhase)
+            -- Narutibia: usar Tibia.spr/Tibia.dat (custom) em vez de appearances.dat (protobuf).
+            -- Não afeta o parsing do protocolo 1310: só troca o asset loader.
+            g_game.enableFeature(GameLoadSprInsteadProtobuf)
+            -- Narutibia: o Tibia.spr 12.86 que exportamos tem canal alpha (RGBA 4 bytes/pixel).
+            -- Sem este flag o loader lê 3 bytes/pixel (RGB) e desalinha todos os sprites,
+            -- resultando em renderização preta/corrompida ("tv sem sinal").
+            g_game.enableFeature(GameSpritesAlphaChannel)
         end
 
         if version >= 1290 then

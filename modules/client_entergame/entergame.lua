@@ -793,7 +793,7 @@ function EnterGame.doLogin()
     g_settings.set('port', G.port)
     g_settings.set('client-version', clientVersion)
 
-    if clientVersion >= 1281 and G.port ~= 7171 then
+    if httpLogin or (clientVersion >= 1281 and G.port ~= 7171) then
         EnterGame.tryHttpLogin(clientVersion, httpLogin)
     else
         protocolLogin = ProtocolLogin.create()

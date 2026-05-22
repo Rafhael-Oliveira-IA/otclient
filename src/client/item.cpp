@@ -266,11 +266,17 @@ int Item::calculateAnimationPhase()
 
 void Item::setId(uint32_t id)
 {
-    if (!g_things.isValidDatId(id, ThingCategoryItem))
-        id = 0;
+    // Narutibia: tolerar clientIds desconhecidos no DAT (server pode mandar IDs > DAT range).
+    // Como Thing::isStackable/isContainer/isPodium/... são null-safe (retornam false quando
+    // ThingType é nullptr), o parser não consome bytes extras e não há desync. O item fica
+    // invisível mas o stream continua sincronizado.
+    // if (!g_things.isValidDatId(id, ThingCategoryItem))
+    //     id = 0;
 
 #ifdef FRAMEWORK_EDITOR
-    m_serverId = g_things.findItemTypeByClientId(id)->getServerId();
+    if (g_things.isValidDatId(id, ThingCategoryItem)) {
+        m_serverId = g_things.findItemTypeByClientId(id)->getServerId();
+    }
 #endif
 
     m_clientId = id;

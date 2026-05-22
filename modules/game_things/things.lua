@@ -71,12 +71,25 @@ local function load(version)
         if not g_sprites.loadSpr(sprPath) then
             errorList[#errorList + 1] = tr('Unable to load spr file, please place a valid spr in \'%s.spr\'', sprPath)
         end
-        if g_game.getFeature(GameLoadSprInsteadProtobuf) and version >= 1281 then
-            local staticPath = resolvepath(string.format('/things/%d/appearances', version))
-            if not g_things.loadAppearances(staticPath) then
-                g_logger.warning(string.format(
-                    "[game_things.load()] Couldn't load /things/%d/appearances.dat, possible packets error.", version))
+
+        -- Narutibia hybrid: Tibia.dat/spr 10.98 + appearances.dat 13.x (flag metadata only).
+        -- The 13.x protocol parser reads optional bytes (count, podium block, classification,
+        -- clock/expire, charges, container types, shader, tooltip, deco kit) based on item-type
+        -- flags. The 10.98 .dat lacks these flags for ids > ~10.98 range, so we layer the
+        -- appearances.dat on top: existing ids get patched flags, unknown ids get a flags-only
+        -- stub. Sprites still come from Tibia.spr 10.98 (missing ids render as null/placeholder).
+        local appearancesPath
+        if filename then
+            appearancesPath = resolvepath('/data/things/appearances')
+        else
+            appearancesPath = resolvepath('/data/things/' .. version .. '/appearances')
+        end
+        if g_resources.fileExists(appearancesPath .. '.dat') then
+            if not g_things.loadAppearances(appearancesPath) then
+                g_logger.warning(string.format("Narutibia: appearances.dat present but failed to load at '%s.dat' — protocol parser may desync for 13.x items.", appearancesPath))
             end
+        else
+            g_logger.warning(string.format("Narutibia: no appearances.dat at '%s.dat' — running pure 10.98 flags. Server-side 13.x items beyond the 10.98 range will desync the protocol parser.", appearancesPath))
         end
     end
 

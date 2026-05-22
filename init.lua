@@ -3,11 +3,11 @@
 
 -- updater
 Services = {
-    --updater = "http://localhost/api/updater.php", --./updater
-    --status = "http://localhost/login.php", --./client_entergame | ./client_topmenu
-    --websites = "http://localhost/?subtopic=accountmanagement", --./client_entergame "Forgot password and/or email"
-    --createAccount = "http://localhost/clientcreateaccount.php", --./client_entergame -- createAccount.lua
-    --getCoinsUrl = "http://localhost/?subtopic=shop&step=terms", --./game_market
+    --updater = "http://127.0.0.1:8080/api/updater.php", --./updater
+    status = "http://127.0.0.1:8080/login.php", --./client_entergame | ./client_topmenu
+    --websites = "http://127.0.0.1:8080/?subtopic=accountmanagement", --./client_entergame "Forgot password and/or email"
+    --createAccount = "http://127.0.0.1:8080/clientcreateaccount.php", --./client_entergame -- createAccount.lua
+    --getCoinsUrl = "http://127.0.0.1:8080/?subtopic=shop&step=terms", --./game_market
 }
 
 --- Enables or disables the entire server configuration block.
@@ -50,43 +50,19 @@ if ENABLE_SERVERS then
     --
     Servers_init = {
 
-        -- Local login server
-        ---
-        -- Configuration for local login server.
-        -- @class table
-        -- @name local_login
-        -- @field port Port used for HTTP connection
-        -- @field protocol Protocol identifier used by the application
-        -- @field httpLogin Enables HTTP-based login on the server
-        -- @field useAuthenticator Enables additional authentication layer
-        --
-        ["http://127.0.0.1/login.php"] = {
-            port = 80,
-            protocol = 1412,
+        -- Narutibia local server
+        ["http://127.0.0.1:8080/login.php"] = {
+            port = 8080,
+            protocol = 1310,
             httpLogin = true,
             useAuthenticator = false
         },
-
-        -- External server
-        ---
-        -- Configuration for external server ip.net.
-        -- @class table
-        -- @name ip_net
-        -- @field port TCP port used for connection
-        -- @field protocol Protocol identifier used by the server
-        -- @field httpLogin Indicates if the server allows HTTP login
-        --
-        ["ip.net"] = {
-            port = 7171,
-            protocol = 860,
-            httpLogin = false
-        }
     }
 end
 
-g_app.setName("OTClient - Redemption");
-g_app.setCompactName("otclient");
-g_app.setOrganizationName("otcr");
+g_app.setName("Narutibia");
+g_app.setCompactName("narutibia");
+g_app.setOrganizationName("narutibia");
 
 g_app.hasUpdater = function()
     return (Services.updater and Services.updater ~= "" and g_modules.getModule("updater"))
